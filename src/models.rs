@@ -5,7 +5,7 @@ use serde_json::Value;
 use std::{io::{self, BufRead, Write}, path::Path, time::Duration};
 
 pub const DEFAULT_MODEL: &str = "gpt-4.1-mini";
-const PRESETS: &[&str] = &["gpt-4.1-mini", "gpt-4.1", "gpt-5-mini", "gpt-5.2"];
+const PRESETS: &[&str] = &["gpt-4.1-mini", "gpt-6-luna", "gpt-6.1-terra", "gpt-6.2-sol", "gpt-5-mini", "gpt-5.2", "gpt-4.1"];
 const MENU_LIMIT: usize = 8;
 
 fn parse_ids(value: Value) -> Result<Vec<String>> {
@@ -111,7 +111,7 @@ mod tests {
         Config::new(config::PaintKind::Csp, None, DEFAULT_MODEL.into(), "https://api.openai.com/v1".into()).unwrap()
     }
     #[test] fn discovery_filters_and_deduplicates() {
-        assert_eq!(parse_ids(json!({"data":[{"id":"b"},{"id":"a"},{"id":"a"},{"id":"\u001b[31m"},{"id":null}]})).unwrap(), vec!["a","b"]);
+        assert_eq!(parse_ids(json!({"data":[{"id":"b"},{"id":"a"},{"id":"a"},{"id":"\u{001b}[31m"},{"id":null}]})).unwrap(), vec!["a","b"]);
         assert!(parse_ids(json!({"error":"bad"})).is_err());
     }
     #[test] fn discovered_presets_are_prioritized() {
