@@ -1,6 +1,7 @@
 mod config;
 mod desktop;
 mod mentor;
+mod models;
 mod paint;
 mod server;
 
@@ -27,8 +28,9 @@ enum Command {
         /// Exact executable basename override.
         #[arg(long)]
         app: Option<String>,
-        #[arg(long, default_value = "gpt-4.1-mini")]
-        model: String,
+        /// Model ID; omit to select interactively after API key registration.
+        #[arg(long)]
+        model: Option<String>,
         /// Explicitly trusted OpenAI-compatible HTTPS API base.
         #[arg(long, default_value = "https://api.openai.com/v1")]
         api_base: String,
@@ -38,6 +40,13 @@ enum Command {
         /// Skip credential prompt (e.g. for a smoke test).
         #[arg(long)]
         no_key: bool,
+    },
+    /// List model IDs returned by the configured API.
+    Models,
+    /// Select and save a model (omit ID for interactive selection).
+    Model {
+        /// Exact model ID, e.g. gpt-4.1-mini.
+        id: Option<String>,
     },
     /// Enter or replace API key in Windows Credential Manager.
     Key,
@@ -51,6 +60,9 @@ enum Command {
     Doctor { #[arg(long)] api: bool },
     /// Start a local monitoring session; Ctrl+C or :quit to stop.
     Run {
+        /// Override the saved model for this session only.
+        #[arg(long)]
+        model: Option<String>,
         /// Allow on-demand artwork/window images to be sent to the model.
         #[arg(long)]
         vision: bool,
@@ -83,13 +95,32 @@ async fn main() -> Result<()> {
             if companion && paint != config::PaintKind::Csp {
                 bail!("Companion is for CSP only");
             }
-            let cfg = config::Config::new(paint, app, model, api_base)?;
+            let interactive_model = model.is_none() && !no_key;
+            let mut cfg = config::Config::new(paint, app, model.unwrap_or_else(|| models::DEFAULT_MODEL.into()), api_base)?;
             config::save_new(&root, &cfg)?;
             if companion { paint::install(&root).await?; }
             if !no_key { config::prompt_key(&root, &cfg)?; }
+            if interactive_model {
+                cfg.model = models::choose(&root, &cfg).await?;
+                config::save_existing(&root, &cfg)?;
+            }
+            println!("使用モデル: {}", cfg.model);
             println!("設定を作成しました: {}", root.display());
             println!("次: sensei doctor → sensei run --vision");
             if companion { println!("CSP Companion を使う場合は sensei pair を実行してください。"); }
+        }
+        Command::Models => {
+            let cfg = config::load(&root)?;
+            let ids = models::available(&root, &cfg).await?;
+            println!("API: {} / 現在のモデル: {}", cfg.api_base, cfg.model);
+            println!("モデル一覧（画像入力・JSON mode・Chat Completions 対応を保証するものではありません）:");
+            for id in ids { println!("  {id}"); }
+        }
+        Command::Model { id } => {
+            let mut cfg = config::load(&root)?;
+            cfg.model = match id { Some(id) => id.trim().to_owned(), None => models::choose(&root, &cfg).await? };
+            config::save_existing(&root, &cfg)?;
+            println!("使用モデルを保存しました: {}（次回起動から有効）", cfg.model);
         }
         Command::Key => config::prompt_key(&root, &config::load(&root)?)?,
         Command::ForgetKey => config::forget_key(&root, &config::load(&root)?)?,
@@ -117,12 +148,14 @@ async fn main() -> Result<()> {
                 println!("API response: {:?}", d.kind);
             } else { println!("APIは未呼び出し。sensei doctor --api で疎通確認できます。"); }
         }
-        Command::Run { vision, manual, max_calls_per_hour, cooldown_seconds, goal } => {
+        Command::Run { model: model_override, vision, manual, max_calls_per_hour, cooldown_seconds, goal } => {
             if !cfg!(windows) { bail!("Desktop monitoring is Windows-only"); }
             if !(1..=120).contains(&max_calls_per_hour) || !(15..=3600).contains(&cooldown_seconds) {
                 bail!("max calls: 1–120; cooldown: 15–3600 seconds");
             }
-            let cfg = config::load(&root)?;
+            let mut cfg = config::load(&root)?;
+            if let Some(id) = model_override { cfg.model = id.trim().to_owned(); cfg.validate()?; }
+            println!("使用モデル: {}", cfg.model);
             let key = config::read_key(&root, &cfg).context("sensei key でAPIキーを登録してください")?;
             let model = mentor::Model::new(&cfg, key)?;
             let obs = desktop::Observer::start(cfg.app.clone());

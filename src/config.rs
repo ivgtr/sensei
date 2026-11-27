@@ -29,7 +29,7 @@ impl Config {
     }
     pub fn validate(&self) -> Result<()> {
         if self.app.is_empty() || !self.app.to_ascii_lowercase().ends_with(".exe") ||
-            self.app.contains(['/', '\\', ':']) || self.model.trim().is_empty() {
+            self.app.contains(['/', '\\', ':']) || !valid_model_id(&self.model) {
             bail!("Specify an exact executable basename and model");
         }
         let u = url::Url::parse(&self.api_base)?;
@@ -39,6 +39,11 @@ impl Config {
         }
         Ok(())
     }
+}
+
+pub fn valid_model_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 256 &&
+        !id.chars().any(|c| c.is_whitespace() || c.is_control())
 }
 
 pub fn load(root: &Path) -> Result<Config> {
@@ -55,6 +60,19 @@ pub fn save_new(root: &Path, cfg: &Config) -> Result<()> {
     f.write_all(&data)?;
     Ok(())
 }
+/// Replace settings atomically without modifying endpoint-scoped credentials.
+pub fn save_existing(root: &Path, cfg: &Config) -> Result<()> {
+    cfg.validate()?;
+    let path = root.join("settings.json");
+    if !path.is_file() { bail!("Run sensei setup first"); }
+    let mut tmp = tempfile::NamedTempFile::new_in(root)?;
+    serde_json::to_writer_pretty(&mut tmp, cfg)?;
+    tmp.write_all(b"\n")?;
+    tmp.as_file().sync_all()?;
+    tmp.persist(path).context("Could not replace local settings")?;
+    Ok(())
+}
+
 #[cfg(windows)]
 fn entry(root: &Path, cfg: &Config) -> Result<keyring::Entry> {
     let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
@@ -92,6 +110,20 @@ pub fn forget_key(root: &Path, cfg: &Config) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test] fn model_change_preserves_other_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cfg = Config::new(PaintKind::Csp,None,"gpt-4.1-mini".into(),"https://api.openai.com/v1".into()).unwrap();
+        save_new(dir.path(), &cfg).unwrap();
+        cfg.model = "custom/model:1".into();
+        save_existing(dir.path(), &cfg).unwrap();
+        let saved = load(dir.path()).unwrap();
+        assert_eq!(saved.model, "custom/model:1");
+        assert_eq!(saved.api_base, cfg.api_base);
+        assert_eq!(saved.app, cfg.app);
+        cfg.model = "bad\nmodel".into();
+        assert!(save_existing(dir.path(), &cfg).is_err());
+        assert_eq!(load(dir.path()).unwrap().model, "custom/model:1");
+    }
     #[test] fn config_no_secrets_or_overwrite() {
         let dir = tempfile::tempdir().unwrap();
         let cfg = Config::new(PaintKind::Csp,None,"gpt-4.1-mini".into(),"https://api.openai.com/v1/".into()).unwrap();

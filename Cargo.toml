@@ -1,6 +1,6 @@
 [package]
 name = "sensei"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 description = "Action-first personal mentor for Windows"
 
@@ -15,6 +15,7 @@ rmcp = { version = "=0.8.4", features = ["client", "transport-child-process", "t
 base64 = "0.22"
 rpassword = "7"
 url = "2"
+tempfile = "3"
 sha1 = "0.10"
 sha2 = "0.10"
 zip = { version = "2.4", default-features = false, features = ["deflate"] }
@@ -25,5 +26,4 @@ windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_Wind
 xcap = "=0.0.14"
 image = { version = "0.25", default-features = false, features = ["png"] }
 
-[dev-dependencies]
-tempfile = "3"
+

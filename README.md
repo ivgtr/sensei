@@ -1,6 +1,6 @@
 # Sensei
 
-Windowsでイラスト制作に付き添う、操作中心のAIメンター。**v0.3 Rust MVP**。
+Windowsでイラスト制作に付き添う、操作中心のAIメンター。**v0.3.1 Rust MVP**。
 Discordで先生に画面共有しながら作業する体験を目指す。通常は操作イベントを使い、必要な場合だけ画像を取得する。
 
 ## Quick start (Windows x64)
@@ -15,9 +15,26 @@ Discordで先生に画面共有しながら作業する体験を目指す。通�
 .\sensei.exe run --vision
 ```
 
-Kritaなら `setup --paint krita`。setupでAPIキーを非表示入力し、Windows Credential Managerに保存します。OpenAI Chat Completions API、既定モデル gpt-4.1-mini。利用できるモデルを `--model`、OpenAI互換HTTPSエンドポイントを `--api-base` で明示できます（JSON mode・画像・max_completion_tokensの互換性は各サービス依存）。APIは別料金です。環境変数 SENSEI_API_KEY も使えます。setup --no-key なら入力を省略できます。
+Kritaなら `setup --paint krita`。setupでAPIキーを非表示入力し、Windows Credential Managerに保存します。OpenAIのAPIキー（ChatGPTの月額契約とは別、https://platform.openai.com/api-keys ）を使用します。初回キー入力後、APIの `GET /models` を参照してモデル候補を表示します。番号選択、任意のモデルID直接入力、Enterで現在の既定値（gpt-4.1-mini）を維持できます。OpenAI互換HTTPSエンドポイントを `--api-base` で明示できます（JSON mode・画像・max_completion_tokensの互換性は各サービス依存）。APIは別料金です。環境変数 SENSEI_API_KEY も使えます。setup --no-key ならキー入力とモデル選択を省略できます。
 
 CSPまたはKritaを開き、描画・Undoなどを行って、Senseiが操作候補を認識するか確認します。CLIで `:status`。AIは操作がまとまり、対象アプリで手が止まったときだけ推論する設計です。必要な場合のみ画像を追加で送ります。
+
+### Model selection
+
+```powershell
+# 利用可能なモデルIDを取得（推論リクエストは行わない）
+.\sensei.exe models
+# 番号選択または任意のモデルIDの直接入力
+.\sensei.exe model
+# 使用モデルを保存（キーは再登録不要）
+.\sensei.exe model gpt-4.1-mini
+# このセッションだけ別モデルを使う
+.\sensei.exe run --vision --model gpt-5-mini
+# 初回からモデルを明示して選択画面を省略
+.\sensei.exe setup --paint csp --model gpt-4.1-mini
+```
+
+一覧はキーで参照可能なモデルIDで、Chat Completions・画像入力・JSON modeへの対応を保証しません。OpenAIの既知の候補を優先し、一覧にないIDや互換プロバイダーのモデルも手入力できます。モデル一覧取得が未対応・失敗の場合は手入力と既定候補にフォールバックします。変更後は `doctor --api` でテキスト推論の疎通、`run --vision --manual` の `:look` で画像入力を確認してください。これらは課金されるAPIリクエストです。
 
 ### CLI interaction
 
