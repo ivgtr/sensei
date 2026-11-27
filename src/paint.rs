@@ -15,6 +15,7 @@ fn python(root:&Path)->PathBuf {
 pub fn installed(root:&Path)->bool { python(root).is_file() && source(root).join("server.py").is_file() && root.join("companion-installed").is_file() }
 
 async fn execute(cmd:&mut Command)->Result<()> {
+    for key in ["SENSEI_API_KEY","OPENAI_API_KEY","ANTHROPIC_API_KEY","GEMINI_API_KEY"] {cmd.env_remove(key);}
     let result=cmd.status().await.context("Failed to start dependency command; install Git and uv for optional Companion")?;
     if !result.success() {bail!("Dependency command failed: {}",result);}
     Ok(())

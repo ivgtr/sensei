@@ -27,6 +27,7 @@ CSPまたはKritaを開き、描画・Undoなどを行って、Senseiが操作�
 | :look 肩の位置を確認して | 画像を一度取得して質問 |
 | :status | 監視対象の検出・直近イベント数 |
 | :pause / :resume | 自動推論の停止・再開（ローカル観測は続く） |
+| :accept / :reject | AIのビュー変更提案を明示承認・破棄（60秒以内） |
 | :zoom in / out / fit / reset | Companion接続時のみ、明示的にCSPのビュー変更を要求（resetは回転リセット） |
 | :quit / Ctrl+C | セッション終了・観測停止 |
 
@@ -51,7 +52,7 @@ CSPまたはKritaを開き、描画・Undoなどを行って、Senseiが操作�
 
 pairのみCSPの「スマートフォンと接続」QRのURLを手動で取得し、ローカル端末に入力します。絶対にチャットに貼らないでください。既存のペアリングデータは上書きしません。Companion起動・接続に失敗してもネイティブ観測で続行します。ブラシ状態は上流が提供する数値・真偽値フィールドだけを使います。
 
-Companionは非公式プロトコルです。CSPのプレビュー・変更コマンドの実機互換は未確認。ビュー操作はユーザーの明示的なCLI入力のみ、モデルからの自動実行は行いません。既存レイヤーの編集・保存・直接描画はMVP外です。Krita固有MCPのRust側統合は今後の拡張です（旧Python版には実装があります）。
+Companionは非公式プロトコルです。CSPのプレビュー・変更コマンドの実機互換は未確認。ビュー操作はユーザーの明示的なCLI入力またはAIの提案を :accept で承認した場合のみ。モデルからの自動実行は行いません。既存レイヤーの編集・保存・直接描画はMVP外です。Krita固有MCPのRust側統合は今後の拡張です（旧Python版には実装があります）。
 
 ## External MCP client (optional)
 
@@ -99,7 +100,7 @@ Native rmcp server <-- same Observer (separate session)
 - ペンを置いたときに、操作のまとまりに対して自発的な助言または沈黙を返す。
 - :lookで対象ウィンドウの画像付きの講評を受ける（--visionを指定）。
 - :pauseで自動API呼び出しが停止し、:quitで観測が終了する。
-- 任意: CSP Companionをinstall/pairし、ブラシの状態取得と:zoom fitを確認する。
+- 任意: CSP Companionをinstall/pairし、ブラシの状態取得と:zoom fit、AIからのビュー変更提案と:acceptを確認する。
 
 上記は実機受け入れ条件であって、実行済みという意味ではありません。
 
