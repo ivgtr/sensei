@@ -54,8 +54,8 @@ impl Budget {
         self.calls.push_back(now);true
     }
 }
-struct PendingView{action:ViewAction,generation:u64,created:Instant}
-impl PendingView {fn valid(&self,s:&Snapshot,now:Instant)->bool {s.generation==self.generation && s.target.is_some() && !s.drawing && now.saturating_duration_since(self.created)<Duration::from_secs(60)}}
+struct PendingView{action:ViewAction,generation:u64,seq:u64,created:Instant}
+impl PendingView {fn valid(&self,s:&Snapshot,now:Instant)->bool {s.generation==self.generation && s.seq==self.seq && s.target.is_some() && !s.drawing && now.saturating_duration_since(self.created)<Duration::from_secs(60)}}
 pub struct Options {pub vision:bool,pub manual:bool,pub max_calls:u32,pub cooldown:Duration,pub goal:String}
 struct Gate{last_seq:u64,generation:u64,last_attempt:Instant}
 impl Gate {
@@ -79,12 +79,19 @@ fn input_lines()->mpsc::UnboundedReceiver<String>{
     });rx
 }
 
+// If the user resumed work during inference, don't deliver stale unsolicited
+// advice. Manual questions remain answerable; mutations require a fresh proposal.
+fn fresh_automatic_context(current:&Snapshot,observed:&Snapshot)->bool{
+    current.generation==observed.generation&&current.seq==observed.seq&&current.active&&!current.drawing
+}
+
 async fn turn(model:&Model,obs:&Observer,s:&Snapshot,companion:Option<&Companion>,opts:&Options,budget:&mut Budget,
               question:Option<&str>,force_image:bool,review_reason:&str,last_advice:&mut Option<String>,pending:&mut Option<PendingView>)->Result<()>{
     if s.target.is_none(){bail!("先に対象のペイントソフトを操作してください。");}
     if force_image&&!opts.vision{bail!("画像を許可するには run --vision で起動してください。");}
     let actions:Vec<_>=s.actions.iter().rev().take(40).map(crate::session::compact_action).collect::<Vec<_>>().into_iter().rev().collect();
     let brush=if let Some(p)=companion{p.brush().await}else{None};
+    if question.is_none()&&!fresh_automatic_context(&obs.snapshot(),s){return Ok(());}
     let context=json!({"goal":opts.goal,"question":question,"allow_image":opts.vision,"actions":actions,
         "review_reason":review_reason,"work_context":crate::context::snapshot(s,Instant::now()),
         "coordinate_space":"window-relative physical pixels, not canvas coordinates",
@@ -94,7 +101,7 @@ async fn turn(model:&Model,obs:&Observer,s:&Snapshot,companion:Option<&Companion
         "limitations":"pen tablet XY is normalized HID logical range; tilt is raw logical units; pointer bounds are window-relative; no canvas mapping or confirmed edit history"});
     let image_for=|| -> Result<String> {
         let current=obs.snapshot();
-        if current.generation!=s.generation || (question.is_none() && (!current.active||current.drawing)) {
+        if current.generation!=s.generation || (question.is_none() && !fresh_automatic_context(&current,s)) {
             bail!("Work context changed; image skipped");
         }
         obs.image(s.target.unwrap())
@@ -115,11 +122,11 @@ async fn turn(model:&Model,obs:&Observer,s:&Snapshot,companion:Option<&Companion
     }
     if decision.kind==Kind::ProposeView {
         let current=obs.snapshot();
-        if companion.is_some() && current.generation==s.generation &&
-            (question.is_some() || (current.active && !current.drawing)) {
+        if companion.is_some() && current.generation==s.generation && current.seq==s.seq && !current.drawing &&
+            (question.is_some() || fresh_automatic_context(&current,s)) {
             if let Some(action)=decision.action{
                 println!("\nSensei: {} (提案: :zoom {}。60秒以内に :accept / :reject)",decision.message,action.cli());
-                *pending=Some(PendingView{action,generation:s.generation,created:Instant::now()});
+                *pending=Some(PendingView{action,generation:s.generation,seq:s.seq,created:Instant::now()});
                 *last_advice=Some(decision.message);
             }
         } else if question.is_some(){println!("Sensei: 現在はビュー操作を提案できません。");}
@@ -129,7 +136,7 @@ async fn turn(model:&Model,obs:&Observer,s:&Snapshot,companion:Option<&Companion
         let current=obs.snapshot();
         if current.generation!=s.generation {return Ok(());}
         // For spontaneous feedback, suppress delivery if drawing or away now.
-        if question.is_none()&&(!current.active||current.drawing){return Ok(());}
+        if question.is_none()&&!fresh_automatic_context(&current,s){return Ok(());}
         if !decision.message.trim().is_empty(){
             println!("\nSensei: {}",decision.message);
             *last_advice=Some(decision.message);
@@ -231,9 +238,10 @@ mod tests {
     }
     #[test]fn proposal_expires_and_checks_generation(){
         let now=Instant::now();
-        let p=PendingView{action:ViewAction::Fit,generation:3,created:now};
+        let p=PendingView{action:ViewAction::Fit,generation:3,seq:0,created:now};
         let mut s=Snapshot{generation:3,target:Some(crate::desktop::Target{hwnd:1,pid:2,rect:[0,0,10,10]}),..Default::default()};
         assert!(p.valid(&s,now));assert!(!p.valid(&s,now+Duration::from_secs(60)));
+        s.seq=1;assert!(!p.valid(&s,now));s.seq=0;
         s.generation=4;assert!(!p.valid(&s,now));
     }
     #[tokio::test] async fn chat_completions_text_and_image_contract(){
@@ -261,6 +269,14 @@ mod tests {
         assert_eq!(m.ask(&json!({"actions":[]}),None,false).await.unwrap().kind,Kind::Inspect);
         assert_eq!(m.ask(&json!({"actions":[]}),Some("dGVzdA=="),false).await.unwrap().kind,Kind::Advise);
         task.await.unwrap();
+    }
+    #[test]fn stale_automatic_feedback_is_suppressed(){
+        let initial=Snapshot{generation:1,seq:5,active:true,..Default::default()};
+        let mut latest=initial.clone();
+        assert!(fresh_automatic_context(&latest,&initial));
+        latest.seq+=1;assert!(!fresh_automatic_context(&latest,&initial));
+        latest.seq=5;latest.drawing=true;assert!(!fresh_automatic_context(&latest,&initial));
+        latest.drawing=false;latest.active=false;assert!(!fresh_automatic_context(&latest,&initial));
     }
     #[test]fn gate_respects_idle_cooldown_and_new_evidence(){
         let now=Instant::now();

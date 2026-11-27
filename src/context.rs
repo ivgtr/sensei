@@ -175,7 +175,7 @@ pub fn analyze(actions:&[Action],generation:u64,now_ms:u64)->WorkContext{
 }
 fn groups<'a>(events:&[&'a Action])->BTreeMap<String,Vec<Stroke<'a>>>{
     let mut out=BTreeMap::<String,Vec<Stroke<'a>>>::new();
-    for a in events{if let Some((source,s))=stroke(a){out.entry(source).or_default().push(s);}}
+    for &a in events{if let Some((source,s))=stroke(a){out.entry(source).or_default().push(s);}}
     out
 }
 pub fn snapshot(s:&Snapshot,now:Instant)->WorkContext{
@@ -222,6 +222,19 @@ mod tests{
         assert_eq!(review_reason(&analyze(&a,1,5000),0),Some("undo_shortcut_burst"));
         a[0].generation=2;
         assert!(review_reason(&analyze(&a,1,5000),0).is_none());
+    }
+    #[test]fn pressure_changes_require_same_device_and_valid_samples(){
+        let mut a=Vec::new();
+        for i in 1..=12{
+            let mut p=crate::pen::Accumulator::new(1,0);
+            let value=if i<=6{0.2}else{0.7};
+            for t in [0,10]{p.sample(crate::pen::Sample{device:1,tip:true,xy:Some([0.2,0.3]),pressure:Some(value),tilt_raw:[None;2]},t);}
+            let mut pen=p.finish();pen.device_slot=Some(1);
+            let mut e=drag(i,if i<=6{i*1000}else{30_000+i*1000},10,0);e.kind="pen_stroke".into();e.pen=Some(pen);a.push(e);
+        }
+        assert!(analyze(&a,1,45000).signals.iter().any(|s|s.kind=="pressure_shift"));
+        for e in &mut a[6..]{e.pen.as_mut().unwrap().device_slot=Some(2);}
+        assert!(!analyze(&a,1,45000).signals.iter().any(|s|s.kind=="pressure_shift"));
     }
     #[test]fn pen_devices_and_pointer_are_not_combined(){
         let mut a=Vec::new();
