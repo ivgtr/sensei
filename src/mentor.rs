@@ -16,30 +16,29 @@ impl ViewAction { fn cli(self)->&'static str { match self {Self::In=>"in",Self::
 #[derive(Debug, Deserialize)]
 pub struct Decision {pub kind:Kind,pub message:String,pub action:Option<ViewAction>}
 
-pub struct Model { client:reqwest::Client, endpoint:String, model:String, key:String }
+pub struct Model { client:reqwest::Client, endpoint:String, model:String, key:String, provider:crate::provider::Provider }
 impl Model {
     pub fn new(cfg:&Config,key:String)->Result<Self>{
         cfg.validate()?;
         let client=reqwest::Client::builder().timeout(Duration::from_secs(45))
             .redirect(reqwest::redirect::Policy::none()).build()?;
-        Ok(Self{client,endpoint:format!("{}/chat/completions",cfg.api_base.trim_end_matches('/')),model:cfg.model.clone(),key})
+        let provider=cfg.provider();
+        Ok(Self{client,endpoint:format!("{}{}",cfg.api_base.trim_end_matches('/'),provider.chat_path()),model:cfg.model.clone(),key,provider})
     }
     pub async fn ask(&self,context:&Value,image:Option<&str>,manual:bool)->Result<Decision>{
         let text=json!({"manual_question":manual,"context":context,"image_attached":image.is_some()}).to_string();
-        let mut content=vec![json!({"type":"text","text":text})];
-        if let Some(img)=image {content.push(json!({"type":"image_url","image_url":{"url":format!("data:image/png;base64,{img}"),"detail":"auto"}}));}
-        let response=self.client.post(&self.endpoint).bearer_auth(&self.key).json(&json!({
-            "model":self.model,
-            "messages":[{"role":"system","content":SYSTEM},{"role":"user","content":content}],
-            "response_format":{"type":"json_object"},"max_completion_tokens":512
-        })).send().await.map_err(|_|anyhow!("LLM request failed (network or timeout)"))?;
+        let body=self.provider.request(&self.model,SYSTEM,&text,image);
+        let response=self.provider.auth(self.client.post(&self.endpoint),&self.key).json(&body)
+            .send().await.map_err(|_|anyhow!("LLM request failed (network or timeout)"))?;
         if !response.status().is_success(){bail!("LLM HTTP {} (check API key, model and billing)",response.status());}
         let result:Value=response.json().await.map_err(|_|anyhow!("Invalid LLM response"))?;
-        let text=result.pointer("/choices/0/message/content").and_then(Value::as_str).ok_or_else(||anyhow!("No model text"))?;
-        parse_decision(text)
+        let text=self.provider.response_text(&result).ok_or_else(||anyhow!("No model text (check model compatibility and output token limit)"))?;
+        parse_decision(&text)
     }
 }
 fn parse_decision(text:&str)->Result<Decision> {
+    let text=text.trim();
+    let text=text.strip_prefix("```json").or_else(||text.strip_prefix("```")).and_then(|s|s.strip_suffix("```")).unwrap_or(text).trim();
     let mut d:Decision=serde_json::from_str(text).map_err(|_|anyhow!("Invalid mentor JSON"))?;
     d.message=d.message.chars().filter(|c|!c.is_control()||*c=='\n').take(1200).collect();
     if (d.kind==Kind::ProposeView)!=d.action.is_some(){bail!("Invalid view proposal");}
@@ -250,7 +249,7 @@ mod tests {
             }
         });
         // Direct test-only model construction. Production validation disallows HTTP.
-        let m=Model{client:reqwest::Client::builder().no_proxy().timeout(Duration::from_secs(5)).build().unwrap(),endpoint,model:"mock".into(),key:"test-only".into()};
+        let m=Model{client:reqwest::Client::builder().no_proxy().timeout(Duration::from_secs(5)).build().unwrap(),endpoint,model:"mock".into(),key:"test-only".into(),provider:crate::provider::Provider::Openai};
         assert_eq!(m.ask(&json!({"actions":[]}),None,false).await.unwrap().kind,Kind::Inspect);
         assert_eq!(m.ask(&json!({"actions":[]}),Some("dGVzdA=="),false).await.unwrap().kind,Kind::Advise);
         task.await.unwrap();

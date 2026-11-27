@@ -21,6 +21,7 @@ pub fn default_root() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(".")).join("Sensei").join("rust")
 }
 impl Config {
+    pub fn provider(&self) -> crate::provider::Provider { crate::provider::Provider::from_base(&self.api_base) }
     pub fn new(paint: PaintKind, app: Option<String>, model: String, api_base: String) -> Result<Self> {
         let app = app.unwrap_or_else(|| match paint { PaintKind::Csp => "CLIPStudioPaint.exe", PaintKind::Krita => "krita.exe" }.into());
         let cfg = Self { paint, app: app.to_ascii_lowercase(), model, api_base: api_base.trim_end_matches('/').into() };
@@ -81,7 +82,8 @@ fn entry(root: &Path, cfg: &Config) -> Result<keyring::Entry> {
 pub fn prompt_key(root: &Path, cfg: &Config) -> Result<()> {
     #[cfg(windows)]
     {
-        println!("API endpoint: {} (キーはここに送信されます)", cfg.api_base);
+        println!("{} API endpoint: {} (キーはここに送信されます)", cfg.provider().label(), cfg.api_base);
+        if let Some(url) = cfg.provider().key_url() { println!("キー発行: {url}"); }
         let key = rpassword::prompt_password("LLM API key (hidden): ")?;
         if key.trim().is_empty() { bail!("Empty API key"); }
         entry(root, cfg)?.set_password(key.trim())?;
@@ -91,14 +93,27 @@ pub fn prompt_key(root: &Path, cfg: &Config) -> Result<()> {
     #[cfg(not(windows))]
     { let _ = (root, cfg); bail!("Use SENSEI_API_KEY environment variable on non-Windows") }
 }
-pub fn read_key(root: &Path, cfg: &Config) -> Result<String> {
-    if let Ok(key) = std::env::var("SENSEI_API_KEY") {
-        if !key.trim().is_empty() { return Ok(key.trim().to_owned()); }
+/// Provider-specific credentials only. Never reuse a different provider's key.
+pub fn read_provider_key(root: &Path, cfg: &Config) -> Result<String> {
+    if let Some(name) = cfg.provider().env_key() {
+        if let Ok(key) = std::env::var(name) {
+            if !key.trim().is_empty() { return Ok(key.trim().to_owned()); }
+        }
     }
     #[cfg(windows)]
     { Ok(entry(root, cfg)?.get_password()?) }
     #[cfg(not(windows))]
     { let _ = (root, cfg); bail!("SENSEI_API_KEY is not set") }
+}
+pub fn read_key(root: &Path, cfg: &Config) -> Result<String> {
+    // Backward-compatible generic override ONLY for the original OpenAI endpoint.
+    // This avoids sending an existing OpenAI override to another provider.
+    if cfg.provider() == crate::provider::Provider::Openai {
+        if let Ok(key) = std::env::var("SENSEI_API_KEY") {
+            if !key.trim().is_empty() { return Ok(key.trim().to_owned()); }
+        }
+    }
+    read_provider_key(root, cfg)
 }
 pub fn forget_key(root: &Path, cfg: &Config) -> Result<()> {
     #[cfg(windows)]

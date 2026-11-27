@@ -4,8 +4,7 @@ use anyhow::{anyhow, bail, Result};
 use serde_json::Value;
 use std::{io::{self, BufRead, Write}, path::Path, time::Duration};
 
-pub const DEFAULT_MODEL: &str = "gpt-4.1-mini";
-const PRESETS: &[&str] = &["gpt-4.1-mini", "gpt-6-luna", "gpt-6.1-terra", "gpt-6.2-sol", "gpt-5-mini", "gpt-5.2", "gpt-4.1"];
+
 const MENU_LIMIT: usize = 8;
 
 fn parse_ids(value: Value) -> Result<Vec<String>> {
@@ -26,19 +25,18 @@ pub async fn available(root: &Path, cfg: &Config) -> Result<Vec<String>> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(15))
         .redirect(reqwest::redirect::Policy::none()).build()?;
-    let response = client.get(format!("{}/models", cfg.api_base.trim_end_matches('/')))
-        .bearer_auth(key).send().await.map_err(|_| anyhow!("Model list request failed"))?;
+    let provider = cfg.provider();
+    let request = client.get(format!("{}/models", cfg.api_base.trim_end_matches('/')));
+    let request = if provider == crate::provider::Provider::Anthropic { request.query(&[("limit", "1000")]) } else { request };
+    let response = provider.auth(request, &key).send().await.map_err(|_| anyhow!("Model list request failed"))?;
     if !response.status().is_success() {
         bail!("Model list HTTP {}", response.status());
     }
     parse_ids(response.json().await.map_err(|_| anyhow!("Invalid model list JSON"))?)
 }
 
-fn official(cfg: &Config) -> bool {
-    cfg.api_base.trim_end_matches('/') == "https://api.openai.com/v1"
-}
-
 fn candidates(cfg: &Config, discovered: Option<&[String]>) -> Vec<String> {
+    let presets = cfg.provider().presets();
     let mut result = Vec::new();
     let mut add = |id: &str| {
         if result.len() < MENU_LIMIT && !result.iter().any(|existing| existing == id) {
@@ -47,20 +45,18 @@ fn candidates(cfg: &Config, discovered: Option<&[String]>) -> Vec<String> {
     };
     if let Some(ids) = discovered {
         // Prefer familiar multimodal Chat Completions model IDs, but only if listed.
-        if official(cfg) {
-            for &id in PRESETS {
-                if ids.iter().any(|available| available == id) { add(id); }
-            }
+        for &id in presets {
+            if ids.iter().any(|available| available == id) { add(id); }
         }
         if ids.contains(&cfg.model) { add(&cfg.model); }
         // If no known models are listed, expose a small unverified selection.
         // Full discovery output is accessible with `sensei models`.
-        if !official(cfg) || !ids.iter().any(|id| PRESETS.contains(&id.as_str())) {
+        if !ids.iter().any(|id| presets.contains(&id.as_str())) {
             for id in ids { add(id); }
         }
     } else {
         add(&cfg.model);
-        if official(cfg) { for &id in PRESETS { add(id); } }
+        for &id in presets { add(id); }
     }
     result
 }
@@ -108,7 +104,7 @@ mod tests {
     use super::*;
     use serde_json::json;
     fn cfg() -> Config {
-        Config::new(config::PaintKind::Csp, None, DEFAULT_MODEL.into(), "https://api.openai.com/v1".into()).unwrap()
+        Config::new(config::PaintKind::Csp, None, crate::provider::Provider::Openai.default_model().into(), "https://api.openai.com/v1".into()).unwrap()
     }
     #[test] fn discovery_filters_and_deduplicates() {
         assert_eq!(parse_ids(json!({"data":[{"id":"b"},{"id":"a"},{"id":"a"},{"id":"\u{001b}[31m"},{"id":null}]})).unwrap(), vec!["a","b"]);

@@ -3,6 +3,7 @@ mod desktop;
 mod mentor;
 mod models;
 mod paint;
+mod provider;
 mod server;
 
 use anyhow::{bail, Context, Result};
@@ -32,8 +33,11 @@ enum Command {
         #[arg(long)]
         model: Option<String>,
         /// Explicitly trusted OpenAI-compatible HTTPS API base.
-        #[arg(long, default_value = "https://api.openai.com/v1")]
-        api_base: String,
+        #[arg(long)]
+        api_base: Option<String>,
+        /// API provider; omit for interactive selection.
+        #[arg(long)]
+        provider: Option<provider::Provider>,
         /// Install optional upstream Companion and managed uv/Python.
         #[arg(long)]
         companion: bool,
@@ -48,7 +52,16 @@ enum Command {
         /// Exact model ID, e.g. gpt-4.1-mini.
         id: Option<String>,
     },
-    /// Enter or replace API key in Windows Credential Manager.
+    /// Switch API provider; reuse its saved key or prompt for one.
+    Provider {
+        #[arg(value_enum)]
+        name: Option<provider::Provider>,
+        #[arg(long)]
+        api_base: Option<String>,
+        #[arg(long)]
+        model: Option<String>,
+    },
+    /// Enter or replace the active provider's API key in Windows Credential Manager.
     Key,
     /// Remove the API key from Windows Credential Manager.
     ForgetKey,
@@ -91,12 +104,13 @@ async fn main() -> Result<()> {
     let root = cli.root.unwrap_or_else(config::default_root);
     let root = if root.is_absolute() {root} else {std::env::current_dir()?.join(root)};
     match cli.command {
-        Command::Setup { paint, app, model, api_base, companion, no_key } => {
+        Command::Setup { paint, app, model, api_base, provider: selected, companion, no_key } => {
             if companion && paint != config::PaintKind::Csp {
                 bail!("Companion is for CSP only");
             }
             let interactive_model = model.is_none() && !no_key;
-            let mut cfg = config::Config::new(paint, app, model.unwrap_or_else(|| models::DEFAULT_MODEL.into()), api_base)?;
+            let (chosen, base) = provider::select(selected, api_base, provider::Provider::Openai, no_key)?;
+            let mut cfg = config::Config::new(paint, app, model.unwrap_or_else(|| chosen.default_model().into()), base)?;
             config::save_new(&root, &cfg)?;
             if companion { paint::install(&root).await?; }
             if !no_key { config::prompt_key(&root, &cfg)?; }
@@ -104,15 +118,28 @@ async fn main() -> Result<()> {
                 cfg.model = models::choose(&root, &cfg).await?;
                 config::save_existing(&root, &cfg)?;
             }
-            println!("使用モデル: {}", cfg.model);
+            println!("API: {} / 使用モデル: {}", cfg.provider().label(), cfg.model);
             println!("設定を作成しました: {}", root.display());
             println!("次: sensei doctor → sensei run --vision");
             if companion { println!("CSP Companion を使う場合は sensei pair を実行してください。"); }
         }
+        Command::Provider { name, api_base, model } => {
+            let mut cfg = config::load(&root)?;
+            let old = cfg.api_base.clone();
+            let (chosen, base) = provider::select(name, api_base, cfg.provider(), false)?;
+            cfg.api_base = base;
+            if let Some(id) = model.as_ref() { cfg.model = id.trim().to_owned(); }
+            else if old != cfg.api_base { cfg.model = chosen.default_model().into(); }
+            cfg.validate()?;
+            if config::read_provider_key(&root, &cfg).is_err() { config::prompt_key(&root, &cfg)?; }
+            if model.is_none() { cfg.model = models::choose(&root, &cfg).await?; }
+            config::save_existing(&root, &cfg)?;
+            println!("API: {} / モデル: {}", cfg.provider().label(), cfg.model);
+        }
         Command::Models => {
             let cfg = config::load(&root)?;
             let ids = models::available(&root, &cfg).await?;
-            println!("API: {} / 現在のモデル: {}", cfg.api_base, cfg.model);
+            println!("API: {} ({}) / 現在のモデル: {}", cfg.provider().label(), cfg.api_base, cfg.model);
             println!("モデル一覧（画像入力・JSON mode・Chat Completions 対応を保証するものではありません）:");
             for id in ids { println!("  {id}"); }
         }
@@ -132,7 +159,7 @@ async fn main() -> Result<()> {
         Command::Pair => paint::pair(&root).await?,
         Command::Doctor { api } => {
             let cfg = config::load(&root)?;
-            println!("target={} model={} endpoint={}", cfg.app, cfg.model, cfg.api_base);
+            println!("target={} provider={} model={} endpoint={}", cfg.app, cfg.provider().label(), cfg.model, cfg.api_base);
             println!("Windows observer: {}", if cfg!(windows) { "available (実機で確認)" } else { "unsupported" });
             if paint::installed(&root) {
                 let p = paint::Companion::start(&root).await?;

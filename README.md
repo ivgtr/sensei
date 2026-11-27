@@ -1,6 +1,6 @@
 # Sensei
 
-Windowsでイラスト制作に付き添う、操作中心のAIメンター。**v0.3.1 Rust MVP**。
+Windowsでイラスト制作に付き添う、操作中心のAIメンター。**v0.3.2 Rust MVP**。
 Discordで先生に画面共有しながら作業する体験を目指す。通常は操作イベントを使い、必要な場合だけ画像を取得する。
 
 ## Quick start (Windows x64)
@@ -15,9 +15,26 @@ Discordで先生に画面共有しながら作業する体験を目指す。通�
 .\sensei.exe run --vision
 ```
 
-Kritaなら `setup --paint krita`。setupでAPIキーを非表示入力し、Windows Credential Managerに保存します。OpenAIのAPIキー（ChatGPTの月額契約とは別、https://platform.openai.com/api-keys ）を使用します。初回キー入力後、APIの `GET /models` を参照してモデル候補を表示します。番号選択、任意のモデルID直接入力、Enterで現在の既定値（gpt-4.1-mini）を維持できます。OpenAI互換HTTPSエンドポイントを `--api-base` で明示できます（JSON mode・画像・max_completion_tokensの互換性は各サービス依存）。APIは別料金です。環境変数 SENSEI_API_KEY も使えます。setup --no-key ならキー入力とモデル選択を省略できます。
+Kritaなら `setup --paint krita`。setupでAPIキーを非表示入力し、Windows Credential Managerに保存します。初回セットアップでは API プロバイダー → API キー → モデルの順に選択します。OpenAI、Google Gemini (公式OpenAI互換API)、Anthropic Claude (Messages API)、OpenRouter、任意のOpenAI互換HTTPS APIに対応する実装です。各プロバイダーのキーは接続先ごとにWindows Credential Managerへ保存します。ChatGPT等の月額契約とは別にAPI料金が発生する場合があります。モデル一覧・画像・JSON出力の対応は各モデルに依存します。 `setup --no-key` はプロバイダーの選択・キー入力・モデル選択を省略（明示指定がなければOpenAI）。
 
 CSPまたはKritaを開き、描画・Undoなどを行って、Senseiが操作候補を認識するか確認します。CLIで `:status`。AIは操作がまとまり、対象アプリで手が止まったときだけ推論する設計です。必要な場合のみ画像を追加で送ります。
+
+### API provider selection
+
+```powershell
+.\sensei.exe setup --paint csp
+# または初回にプロバイダーを指定
+.\sensei.exe setup --paint csp --provider gemini
+# 設定済みの場合は切替（キーは接続先別に保存、登録済みなら再利用）
+.\sensei.exe provider
+.\sensei.exe provider anthropic
+.\sensei.exe provider openrouter
+.\sensei.exe provider custom --api-base https://example.com/v1 --model your-model
+.\sensei.exe key
+.\sensei.exe doctor --api
+```
+
+キー発行先: [OpenAI](https://platform.openai.com/api-keys) / [Google AI Studio](https://aistudio.google.com/apikey) / [Anthropic](https://console.anthropic.com/settings/keys) / [OpenRouter](https://openrouter.ai/keys)。設定画面にも発行先URLを表示します。APIキーはチャットやコマンド引数に貼らず非表示入力してください。環境変数は OPENAI_API_KEY / GEMINI_API_KEY / ANTHROPIC_API_KEY / OPENROUTER_API_KEY。旧 SENSEI_API_KEY はOpenAI公式接続先のみ有効です。カスタムAPIは保存済みキーを使用します。キーを削除する場合は対象プロバイダーを選び `forget-key`（環境変数は別途解除）。他社APIはモックテスト対象で、実キー・全モデルの実機検証は未実施です。
 
 ### Model selection
 
@@ -34,7 +51,7 @@ CSPまたはKritaを開き、描画・Undoなどを行って、Senseiが操作�
 .\sensei.exe setup --paint csp --model gpt-4.1-mini
 ```
 
-一覧はキーで参照可能なモデルIDで、Chat Completions・画像入力・JSON modeへの対応を保証しません。OpenAIの既知の候補を優先し、一覧にないIDや互換プロバイダーのモデルも手入力できます。モデル一覧取得が未対応・失敗の場合は手入力と既定候補にフォールバックします。変更後は `doctor --api` でテキスト推論の疎通、`run --vision --manual` の `:look` で画像入力を確認してください。これらは課金されるAPIリクエストです。
+一覧はキーで参照可能なモデルIDで、Chat Completions・画像入力・JSON modeへの対応を保証しません。選択中のプロバイダーの既知の候補を優先し、一覧にないIDや互換プロバイダーのモデルも手入力できます。モデル一覧取得が未対応・失敗の場合は手入力と既定候補にフォールバックします。変更後は `doctor --api` でテキスト推論の疎通、`run --vision --manual` の `:look` で画像入力を確認してください。これらは課金されるAPIリクエストです。
 
 ### CLI interaction
 
@@ -106,7 +123,7 @@ Native rmcp server <-- same Observer (separate session)
 - Windows操作: windows-sys / Win32 API (25ms sampling)
 - 画像: xcap + image、対象ウィンドウをPIDとHWNDで確認、最大1280px
 - MCP: 公式Rust SDK rmcp (stdio client/server)
-- API: reqwest + rustls、OpenAI互換Chat Completions
+- API: reqwest + rustls、OpenAI互換Chat Completions / Anthropic Messages
 - APIキー: keyring / Windows Credential Manager、rpasswordで非表示入力
 - 外部依存: uv、必要時のみCSP Companionを隔離環境に導入
 
