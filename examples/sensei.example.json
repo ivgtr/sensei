@@ -1,0 +1,15 @@
+{
+  "backend": "csp",
+  "command": "C:\\Projects\\csp-companion-mcp\\.venv\\Scripts\\python.exe",
+  "args": [
+    "-u",
+    "C:\\Projects\\csp-companion-mcp\\server.py"
+  ],
+  "env": {
+    "PYTHONUTF8": "1"
+  },
+  "preview_root": "C:\\Projects\\sensei-previews",
+  "deskmate_port": null,
+  "allowed_apps": [],
+  "allow_view_changes": false
+}
