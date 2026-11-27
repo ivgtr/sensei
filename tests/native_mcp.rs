@@ -11,7 +11,9 @@ async fn stdio_smoke() {
     let mut cmd=Command::new(bin);cmd.arg("--root").arg(root.path()).arg("mcp");
     let client=tokio::time::timeout(Duration::from_secs(30),().serve(TokioChildProcess::new(cmd).unwrap())).await.unwrap().unwrap();
     let tools=client.list_tools(Default::default()).await.unwrap();
-    assert_eq!(tools.tools.len(),3);
+    assert_eq!(tools.tools.len(),4);
+    let ctx=client.call_tool(CallToolRequestParam{name:"desktop_work_context".into(),arguments:None}).await.unwrap();
+    assert_ne!(ctx.is_error,Some(true));
     let status=client.call_tool(CallToolRequestParam{name:"sensei_status".into(),arguments:None}).await.unwrap();
     assert_ne!(status.is_error,Some(true));
     let image=client.call_tool(CallToolRequestParam{name:"paint_preview".into(),arguments:None}).await.unwrap();

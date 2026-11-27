@@ -99,12 +99,13 @@ pub async fn observe(app:String,path:Option<PathBuf>,seconds:u64)->Result<()>{
     eprintln!("Observation stopped.");Ok(())
 }
 const MAX_LINE:usize=128*1024;
-pub async fn replay(path:&Path,timed:bool,speed:f64,trace:bool)->Result<()>{
+pub async fn replay(path:&Path,timed:bool,speed:f64,trace:bool,analysis_only:bool)->Result<()>{
     if !speed.is_finite()||!(0.1..=100.0).contains(&speed){bail!("Replay speed must be 0.1–100");}
     let mut reader=BufReader::new(File::open(path)?);
     let mut line=Vec::new();let mut header=false;let mut ended=false;let mut last_seq=0u64;let mut last_time=None::<u64>;
     let mut count=0u64;let mut missing=0u64;let mut kinds=BTreeMap::<String,u64>::new();
     let mut pressure_samples=0u64;let mut pressure_sum=0.0;
+    let mut history:Vec<Action>=Vec::new();let mut last_report=None::<u64>;let mut last_signals=Vec::<(String,String)>::new();
     loop{
         line.clear();
         // Bound untrusted local input before allocating a full line.
@@ -132,14 +133,27 @@ pub async fn replay(path:&Path,timed:bool,speed:f64,trace:bool)->Result<()>{
                     pressure_samples=pressure_samples.saturating_add(u64::from(p.pressure_samples));
                     pressure_sum+=v*f64::from(p.pressure_samples);
                 }}
-                if trace{println!("{}",serde_json::to_string(&event)?);}else{println!("{}",compact_action(&event));}
+                if analysis_only{
+                    if history.last().is_some_and(|a|a.generation!=event.generation||a.seq.saturating_add(1)!=event.seq){history.clear();last_report=None;last_signals.clear();}
+                    let generation=event.generation;
+                    history.push(event);
+                    if history.len()>256{history.remove(0);}
+                    let now=history.iter().map(|a|a.at_ms).max().unwrap_or(0);
+                    let c=crate::context::analyze(&history,generation,now);
+                    let signals=c.signals.iter().map(|s|(s.kind.to_owned(),s.source.clone())).collect::<Vec<_>>();
+                    if signals!=last_signals||last_report.is_none_or(|t|now.saturating_sub(t)>=10_000){
+                        println!("{}",json!({"type":"work_context","context":c}));
+                        last_report=Some(now);last_signals=signals;
+                    }
+                }else if trace{println!("{}",serde_json::to_string(&event)?);}else{println!("{}",compact_action(&event));}
             }
-            Row::Gap{missing:n} if header=>{missing=missing.saturating_add(n);eprintln!("Recording gap: {n}");}
+            Row::Gap{missing:n} if header=>{missing=missing.saturating_add(n);eprintln!("Recording gap: {n}");history.clear();last_report=None;last_signals.clear();}
             Row::End{events,missing:n} if header=>{if events!=count||n!=missing{bail!("Recording totals mismatch");}ended=true;}
             _=>bail!("Invalid recording row order"),
         }
     }
     if !header{bail!("Recording header missing");}
+    if analysis_only{if let Some(last)=history.last(){let now=history.iter().map(|a|a.at_ms).max().unwrap_or(0);println!("{}",json!({"type":"final_context","context":crate::context::analyze(&history,last.generation,now)}));}}
     println!("{}",json!({"events":count,"missing":missing,"complete":ended,"counts":kinds,"pressure_samples":pressure_samples,
         "pressure_mean":(pressure_samples>0).then(||pressure_sum/pressure_samples as f64)}));
     if !ended{eprintln!("Recording was interrupted; summary covers valid rows only.");}
@@ -154,7 +168,7 @@ mod tests{
         let mut w=Writer::new(&path,"krita.exe").unwrap();
         let a=Action{seq:1,at_ms:10,generation:1,kind:"click_candidate".into(),bounds:Some([0,0,1,1]),duration_ms:10,samples:1,distance_px:0,pen:None};
         w.event(&a).unwrap();w.gap(2).unwrap();w.finish().unwrap();drop(w);
-        assert!(Writer::new(&path,"x").is_err());replay(&path,false,1.0,false).await.unwrap();
+        assert!(Writer::new(&path,"x").is_err());replay(&path,false,1.0,false,false).await.unwrap();
         assert_eq!(summarize([&a])["counts"]["click_candidate"],1);
     }
     #[test]fn llm_and_mcp_context_omit_raw_trace(){
@@ -169,6 +183,6 @@ mod tests{
     }
     #[tokio::test]async fn rejects_oversize(){
         let d=tempfile::tempdir().unwrap();let p=d.path().join("bad");std::fs::write(&p,vec![b'x';MAX_LINE+1]).unwrap();
-        assert!(replay(&p,false,1.0,false).await.is_err());
+        assert!(replay(&p,false,1.0,false,false).await.is_err());
     }
 }

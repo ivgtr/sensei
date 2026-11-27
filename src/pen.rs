@@ -20,6 +20,7 @@ pub struct Point {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PenStroke {
+    #[serde(default)] pub device_slot: Option<u32>,
     pub samples: u32,
     pub tablet_bounds: Option<[f64;4]>,
     pub path_length_normalized: f64,
@@ -44,7 +45,7 @@ pub struct Accumulator {
 impl Accumulator {
     pub fn new(device:usize,ms:u64)->Self{
         Self{device,start_ms:ms,last_ms:ms,pressure_sum:0.0,last_xy:None,last_point:None,
-            out:PenStroke{samples:0,tablet_bounds:None,path_length_normalized:0.0,pressure_samples:0,
+            out:PenStroke{device_slot:None,samples:0,tablet_bounds:None,path_length_normalized:0.0,pressure_samples:0,
                 pressure_mean:None,pressure_min:None,pressure_max:None,
                 tilt_raw_min:[None;2],tilt_raw_max:[None;2],trace:Vec::new(),trace_stride:1}}
     }

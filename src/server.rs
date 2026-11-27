@@ -23,6 +23,12 @@ impl Sensei{
         let a:Vec<_>=s.actions.iter().rev().take(40).map(crate::session::compact_action).collect();
         Ok(CallToolResult::success(vec![Content::text(json!({"actions_newest_first":a,"coordinate_space":"window-relative pixels, not canvas","drawing":s.drawing,"summary":crate::session::summarize(s.actions.iter()),"pen_coordinate_space":"normalized tablet logical range, not canvas"}).to_string())]))
     }
+    #[tool(description="Analyze recent and preceding 30-second windows. Returns local behavioral signals and evidence, not artistic diagnoses. No API or images.")]
+    async fn desktop_work_context(&self)->Result<CallToolResult,McpError>{
+        let s=self.observer.snapshot();
+        let c=crate::context::snapshot(&s,std::time::Instant::now());
+        Ok(CallToolResult::success(vec![Content::text(json!({"active":s.active,"drawing":s.drawing,"context":c}).to_string())]))
+    }
     #[tool(description="Request a PNG of the previously observed target window. Only enabled with sensei mcp --vision. No whole-desktop capture.")]
     async fn paint_preview(&self)->Result<CallToolResult,McpError>{
         if !self.vision{return Ok(CallToolResult::error(vec![Content::text("Image sharing disabled")]));}

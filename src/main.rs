@@ -1,4 +1,5 @@
 mod config;
+mod context;
 mod desktop;
 mod mentor;
 mod models;
@@ -116,6 +117,8 @@ enum Command {
         #[arg(long, default_value_t = 1.0)]
         speed: f64,
     },
+    /// Analyze a recorded JSONL session locally with the same work-context engine.
+    Analyze { path: PathBuf },
     /// Expose local read-only tools over stdio, no API key or LLM calls.
     Mcp {
         /// Explicitly allow on-demand target-window images through MCP.
@@ -237,7 +240,8 @@ async fn main() -> Result<()> {
             if !cfg!(windows) { bail!("Desktop monitoring is Windows-only"); }
             session::observe(config::load(&root)?.app, Some(path), seconds).await?;
         }
-        Command::Replay { path, timed, speed, trace } => session::replay(&path,timed,speed,trace).await?,
+        Command::Replay { path, timed, speed, trace } => session::replay(&path,timed,speed,trace,false).await?,
+        Command::Analyze { path } => session::replay(&path,false,1.0,false,true).await?,
         Command::Mcp { vision } => {
             let cfg = config::load(&root)?;
             if !cfg!(windows) { bail!("Desktop monitoring is Windows-only"); }

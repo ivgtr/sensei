@@ -59,7 +59,7 @@ impl State {
         self.last_action = Some(Instant::now());
     }
     fn target(&mut self, target: Target) {
-        if self.target.map(|t| (t.hwnd,t.pid)) != Some((target.hwnd,target.pid)) {
+        if self.target != Some(target) {
             self.events.clear();
             self.generation += 1;
             self.last_action = None;
@@ -103,7 +103,7 @@ impl Drop for Observer {
 #[cfg(windows)]
 mod platform {
     use super::*;
-    use std::{io::Cursor, path::Path,collections::HashSet};
+    use std::{io::Cursor, path::Path,collections::{HashSet,HashMap}};
     use crate::pen::native::Pump;
     use base64::{Engine, engine::general_purpose::STANDARD};
     use windows_sys::Win32::{
@@ -141,6 +141,7 @@ mod platform {
         let mut pump=match Pump::new(){Ok(p)=>Some(p),Err(e)=>{eprintln!("Native pen unavailable: {e}; using pointer fallback");None}};
         let mut native:Option<pen::Accumulator>=None;
         let mut armed=HashSet::new();
+        let mut slots=HashMap::<usize,u32>::new();let mut next_slot=0u32;
         let mut last_native=None::<u64>;
         let mut previous:Option<Target>=None;
         let mut was_down=down(VK_LBUTTON as i32); let mut was_undo=false; let mut was_redo=false;
@@ -157,6 +158,7 @@ mod platform {
             let undo=target.is_some() && down(VK_CONTROL as i32)&&down(b'Z' as i32);
             let redo=target.is_some() && down(VK_CONTROL as i32)&&down(b'Y' as i32);
             let mut s=state.lock().unwrap();
+            if reset{slots.clear();}
             if !stable || !still_target || reset || !inside {
                 stroke=None;pending.clear();native=None;armed.clear();last_native=None;
             }
@@ -171,7 +173,8 @@ mod platform {
                             if native.as_ref().is_some_and(|a|a.device==report.device){
                                 if let Some(a)=native.take(){
                                     let duration=ms.saturating_sub(a.start_ms);
-                                    let pen=a.finish();
+                                    let slot=*slots.entry(a.device).or_insert_with(||{next_slot=next_slot.saturating_add(1);next_slot});
+                                    let mut pen=a.finish();pen.device_slot=Some(slot);
                                     s.add(Action{seq:0,at_ms:ms,generation:0,kind:"pen_stroke".into(),bounds:None,
                                         duration_ms:duration,samples:pen.samples,distance_px:0,pen:Some(pen)});
                                     last_native=Some(ms);stroke=None;pending.clear();
@@ -242,6 +245,10 @@ mod tests {
     #[test] fn action_serializes_generation() {
         let mut s=State::default();s.target(Target{hwnd:1,pid:1,rect:[0,0,10,10]});s.add(simple("ctrl_z_candidate",1));
         let a:Action=serde_json::from_value(serde_json::to_value(&s.events[0]).unwrap()).unwrap();assert_eq!(a.generation,1);
+    }
+    #[test] fn geometry_change_resets_history(){
+        let mut s=State::default();s.target(Target{hwnd:1,pid:1,rect:[0,0,10,10]});s.add(simple("ctrl_z_candidate",1));
+        s.target(Target{hwnd:1,pid:1,rect:[0,0,20,20]});assert!(s.events.is_empty());assert_eq!(s.generation,2);
     }
     #[test] fn window_change_resets_history() {
         let mut s=State::default();s.target(Target{hwnd:1,pid:1,rect:[0,0,10,10]});
