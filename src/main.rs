@@ -3,6 +3,8 @@ mod context;
 mod desktop;
 mod mentor;
 mod models;
+mod overlay;
+mod voice;
 mod paint;
 mod pen;
 mod session;
@@ -82,6 +84,15 @@ enum Command {
         /// Allow on-demand artwork/window images to be sent to the model.
         #[arg(long)]
         vision: bool,
+        /// Speak advice using the installed Japanese Windows voice.
+        #[arg(long)]
+        voice: bool,
+        /// Enable explicit local microphone input (:listen or Ctrl+Alt+F9).
+        #[arg(long)]
+        listen: bool,
+        /// Enable transient image-based pointer markers (requires --vision).
+        #[arg(long, requires = "vision")]
+        pointer: bool,
         /// Disable automatic model calls, keep manual questions.
         #[arg(long)]
         manual: bool,
@@ -93,6 +104,13 @@ enum Command {
         #[arg(long, default_value = "イラスト制作の上達")]
         goal: String,
     },
+    /// List local speech engines; optional playback or one-shot recognition.
+    VoiceTest {
+        #[arg(long)] speak: bool,
+        #[arg(long)] listen: bool,
+    },
+    /// Show a non-interactive test marker on the foreground paint application.
+    OverlayTest,
     /// List standard pen HID collections and advertised capabilities (no capture).
     Devices,
     /// Show observed events locally without API calls.
@@ -204,7 +222,7 @@ async fn main() -> Result<()> {
                 println!("API response: {:?}", d.kind);
             } else { println!("APIは未呼び出し。sensei doctor --api で疎通確認できます。"); }
         }
-        Command::Run { model: model_override, vision, manual, max_calls_per_hour, cooldown_seconds, goal } => {
+        Command::Run { model: model_override, vision, voice, listen, pointer, manual, max_calls_per_hour, cooldown_seconds, goal } => {
             if !cfg!(windows) { bail!("Desktop monitoring is Windows-only"); }
             if !(1..=120).contains(&max_calls_per_hour) || !(15..=3600).contains(&cooldown_seconds) {
                 bail!("max calls: 1–120; cooldown: 15–3600 seconds");
@@ -225,11 +243,16 @@ async fn main() -> Result<()> {
                 }
             } else { None };
             let result = mentor::run(model, obs, companion.as_ref(), mentor::Options {
-                vision, manual, max_calls: max_calls_per_hour,
+                vision, voice, listen, pointer, manual, max_calls: max_calls_per_hour,
                 cooldown: Duration::from_secs(cooldown_seconds), goal
             }).await;
             if let Some(p) = companion { p.close().await; }
             result?;
+        }
+        Command::VoiceTest { speak, listen } => voice::test(speak,listen).await?,
+        Command::OverlayTest => {
+            if !cfg!(windows){bail!("Windows only");}
+            overlay::test(std::sync::Arc::new(desktop::Observer::start(config::load(&root)?.app))).await?;
         }
         Command::Devices => session::devices()?,
         Command::Observe { seconds } => {

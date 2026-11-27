@@ -81,6 +81,8 @@ impl Stroke {
 }
 fn simple(kind:&'static str, ms:u64) -> Action { Action{seq:0,at_ms:ms,kind:kind.into(),generation:0,pen:None,bounds:None,duration_ms:0,samples:0,distance_px:0} }
 
+pub struct Frame {pub png:String,pub client_rect:Option<[i32;4]>}
+
 pub struct Observer { state: Arc<Mutex<State>>, stop:Arc<AtomicBool>, worker:Option<thread::JoinHandle<()>>, app:String }
 impl Observer {
     pub fn start(app:String) -> Self {
@@ -94,7 +96,17 @@ impl Observer {
         let s=self.state.lock().unwrap();
         Snapshot{actions:s.events.iter().cloned().collect(),target:s.target,active:s.active,drawing:s.drawing,seq:s.seq,generation:s.generation,last_action:s.last_action,native_registered:s.native_registered,native_reports:s.native_reports,native_strokes:s.native_strokes}
     }
-    pub fn image(&self, target:Target) -> Result<String> { platform::capture(target,&self.app) }
+    pub fn image(&self, target:Target) -> Result<String> { Ok(self.frame(target)?.png) }
+    pub fn frame(&self,target:Target)->Result<Frame>{platform::capture(target,&self.app)}
+    pub fn client_rect(&self,target:Target)->Option<[i32;4]>{platform::client_rect(target,&self.app)}
+    pub fn target_foreground(&self)->bool{
+        let s=self.state.lock().unwrap();
+        s.active&&s.target.is_some_and(platform::foreground)
+    }
+    pub fn marker_fresh(&self,target:Target,generation:u64,seq:u64)->bool{
+        let s=self.state.lock().unwrap();
+        s.target==Some(target)&&s.generation==generation&&s.seq==seq&&s.active&&!s.drawing&&platform::foreground(target)
+    }
 }
 impl Drop for Observer {
     fn drop(&mut self) { self.stop.store(true,Ordering::Relaxed); if let Some(t)=self.worker.take(){let _=t.join();} }
@@ -108,9 +120,10 @@ mod platform {
     use base64::{Engine, engine::general_purpose::STANDARD};
     use windows_sys::Win32::{
         Foundation::{CloseHandle, HWND, POINT, RECT},
+        Graphics::Gdi::ClientToScreen,
         System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION},
         UI::{Input::KeyboardAndMouse::{GetAsyncKeyState,VK_LBUTTON,VK_CONTROL},
-            WindowsAndMessaging::{GetForegroundWindow,GetWindowThreadProcessId,GetWindowRect,GetCursorPos,WindowFromPoint,GetAncestor,GA_ROOT,IsWindow,IsIconic},
+            WindowsAndMessaging::{GetForegroundWindow,GetWindowThreadProcessId,GetWindowRect,GetClientRect,GetCursorPos,WindowFromPoint,GetAncestor,GA_ROOT,IsWindow,IsIconic},
             HiDpi::{SetThreadDpiAwarenessContext,DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2}}
     };
     fn dpi() { unsafe { SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2); } }
@@ -211,27 +224,48 @@ mod platform {
             thread::sleep(Duration::from_millis(8));
         }
     }
-    pub(super) fn capture(target:Target,app:&str)->Result<String> {
+    pub(super) fn foreground(target:Target)->bool{unsafe{GetForegroundWindow() as usize==target.hwnd}}
+    pub(super) fn client_rect(target:Target,app:&str)->Option<[i32;4]>{
+        dpi();
+        let hwnd=target.hwnd as HWND;
+        if identity(hwnd,app)!=Some(target){return None;}
+        unsafe{
+            let mut r:RECT=std::mem::zeroed();
+            if GetClientRect(hwnd,&mut r)==0{return None;}
+            let mut a=POINT{x:r.left,y:r.top};let mut b=POINT{x:r.right,y:r.bottom};
+            if ClientToScreen(hwnd,&mut a)==0||ClientToScreen(hwnd,&mut b)==0||b.x<=a.x||b.y<=a.y{return None;}
+            Some([a.x,a.y,b.x,b.y])
+        }
+    }
+    pub(super) fn capture(target:Target,app:&str)->Result<Frame> {
         dpi();
         let hwnd=target.hwnd as HWND;
         let before=identity(hwnd,app).ok_or_else(||anyhow::anyhow!("Target window no longer available"))?;
-        if before.pid!=target.pid {bail!("Target changed");}
+        if before!=target {bail!("Target changed");}
+        let client=client_rect(target,app);
         let window=xcap::Window::all()?.into_iter().find(|w|w.id()==target.hwnd as u32 && w.process_id()==target.pid && !w.is_minimized())
             .ok_or_else(||anyhow::anyhow!("No capturable target window"))?;
         let image=window.capture_image()?;
         if identity(hwnd,app)!=Some(before) {bail!("Window changed during capture");}
         if image.width()==0 || image.height()==0 {bail!("Empty window image");}
+        // xcap 0.0.14 returns a client-area crop. Do not guess an offset
+        // or scale on mixed-DPI systems: only exact source dimensions qualify.
+        let client=client.filter(|r|client_rect(target,app)==Some(*r)
+            && i64::from(r[2])-i64::from(r[0])==i64::from(image.width())
+            && i64::from(r[3])-i64::from(r[1])==i64::from(image.height()));
         let image=image::DynamicImage::ImageRgba8(image).thumbnail(1280,1280);
         let mut out=Cursor::new(Vec::new());image.write_to(&mut out,image::ImageFormat::Png)?;
         if out.get_ref().len()>8*1024*1024 {bail!("Image too large");}
-        Ok(STANDARD.encode(out.into_inner()))
+        Ok(Frame{png:STANDARD.encode(out.into_inner()),client_rect:client})
     }
 }
 #[cfg(not(windows))]
 mod platform {
     use super::*;
     pub(super) fn observe(_:Arc<Mutex<State>>,_:Arc<AtomicBool>,_:&str){}
-    pub(super) fn capture(_:Target,_:&str)->Result<String>{bail!("Windows only")}
+    pub(super) fn capture(_:Target,_:&str)->Result<Frame>{bail!("Windows only")}
+    pub(super) fn foreground(_:Target)->bool{false}
+    pub(super) fn client_rect(_:Target,_:&str)->Option<[i32;4]>{None}
 }
 
 #[cfg(test)]
