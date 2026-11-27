@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sensei-mcp"
-version = "0.1.0"
+version = "0.2.0"
 description = "Action-first paint assistant MCP facade"
 requires-python = ">=3.11"
 dependencies = ["mcp>=1.26,<2", "httpx>=0.27,<1", "jsonschema>=4.23,<5", "Pillow>=11,<13"]
@@ -14,6 +14,7 @@ test = ["pytest>=8,<10"]
 
 [project.scripts]
 sensei-mcp = "sensei_mcp.server:main"
+sensei-setup = "sensei_mcp.setup:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/sensei_mcp"]

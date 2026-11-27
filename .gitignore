@@ -8,3 +8,5 @@ sensei.local.json
 session.json
 *.log
 previews/
+
+.sensei/

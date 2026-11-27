@@ -1,7 +1,7 @@
 # Sensei
 
 デジタル作業に付き添う AI のための、操作中心（action-first）のローカル MCP。
-初期版 v0.1 は **Paint MCP Facade + Windows 操作履歴の読み取り** に絞っています。
+初期版 v0.2 は **Paint MCP Facade + Windows 操作履歴の読み取り** に絞っています。
 画面を常時 LLM に送らず、必要な時だけ既存ペイント MCP に画像を要求します。
 モデル、常駐エージェント、音声、推論スケジューラーはまだ含みません。
 
@@ -20,7 +20,35 @@ CSP Companion MCP or Krita MCP --> paint_state / on-demand preview
 MCP クライアントと upstream MCP は公式 Python SDK 1.x を使用。
 CSP/Krita のうち一つをローカル設定で選びます。
 
-## Install
+## Quick setup (推奨)
+
+Windows・Python 3.12・Git を前提に、Sensei が外部依存の導入と設定ファイルの生成をまとめて行います。各 MCP をホストに登録する必要はありません。
+
+```powershell
+git clone https://github.com/ivgtr/sensei.git
+cd sensei
+py -3.12 scripts/bootstrap.py install --paint csp --desktop
+```
+
+Krita なら `--paint krita`。DeskMate が不要なら `--desktop` を省略します。DeskMate 単独なら `--paint none --desktop --app Krita`。
+既定の管理ディレクトリは `%LOCALAPPDATA%\Sensei`。CSP と DeskMate は Git コミット固定、Krita は PyPI バージョン固定です。各ツールを別の仮想環境に導入するため、CSP の MCP SDK 2.x と Sensei/Krita の 1.x が依存関係で衝突しません（通信互換性は doctor で確認）。依存パッケージのすべてをハッシュ固定したロックではありません。
+
+```powershell
+# CSP の場合：一度だけ、CSP の QR URL をローカル端末へ入力
+.\.venv\Scripts\sensei-setup.exe pair
+# MCP の起動・ツール検出・CSP 接続状態を確認（作品は編集しない）
+.\.venv\Scripts\sensei-setup.exe doctor
+# DeskMate を使う場合：別端末で明示的に開始。Ctrl+C で停止
+.\.venv\Scripts\sensei-setup.exe desktop-start
+```
+
+Krita の場合は、Krita を閉じて `sensei-setup.exe krita-bridge --allowed-root "C:\Krita Work"` を実行（実在する専用フォルダを指定）。Krita 内で Python Plugin Manager の Krita Codex Bridge を有効にし再起動してください。`sensei-setup.exe krita-check` は上流の実機チェック（使い捨てドキュメントを作成して描画などをテスト）です。
+
+ホストには `%LOCALAPPDATA%\Sensei\codex.toml` または `mcp.json` に生成された **Sensei 1件だけ**を追加してください。既存ホスト設定は勝手に上書きしません。`sensei-setup.exe host-config` で Codex 用ブロックを再表示できます。追加の管理環境を作る場合は `--root` をサブコマンドの前に指定してください。既存の管理設定を上書きする再インストールは未対応です。
+
+DeskMate はオプション。インストール中や Sensei MCP 起動時に記録を開始しません。専用のデータディレクトリとローカルポート 3031 を使い、スクリーンショット・OCR・キー入力・クリップボード・音声を無効化する設定を生成します。ただし上流の操作イベントには他アプリのウィンドウ名等が保存される可能性があります。対象アプリの完全な収集制限ではありません。MCP 出力ではアプリ名完全一致でフィルタします（`--app` で指定、既定 CSP=CLIPStudioPaint / Krita=krita。実際の記録名に合わせてください）。最初は機密情報を含まない実験環境で確認し、不要な時は記録を停止してください。
+
+## Manual install (既存環境を持っている場合)
 
 Windows PowerShell、Python 3.11+（Python 3.12 推奨）。
 
@@ -112,5 +140,5 @@ CSP プレビューは専用ディレクトリ内の PNG のみ、最大 1600px/
 - [Krita Codex MCP](https://github.com/cyyprezz/krita-codex-mcp) — Krita bridge, MIT
 - [DeskMate](https://github.com/zhaohb/deskmate) — Windows activity recording, MIT
 
-既存プロジェクトは別途インストールする依存サービスで、ソースコードは取り込んでいません。
+既存プロジェクトは独立した依存サービスです。管理インストーラーは必要なものだけを導入します。ソースコードは Sensei に取り込んでいません。
 実機の CSP/Krita/DeskMate 連携は未検証です。ユニットテストと stdio スモークテストを同梱しています。
