@@ -10,3 +10,5 @@ session.json
 previews/
 
 .sensei/
+
+/target/
