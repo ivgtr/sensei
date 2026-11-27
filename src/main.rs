@@ -3,6 +3,8 @@ mod desktop;
 mod mentor;
 mod models;
 mod paint;
+mod pen;
+mod session;
 mod provider;
 mod server;
 
@@ -89,6 +91,27 @@ enum Command {
         /// Optional session goal, e.g. practice torso construction.
         #[arg(long, default_value = "イラスト制作の上達")]
         goal: String,
+    },
+    /// List standard pen HID collections and advertised capabilities (no capture).
+    Devices,
+    /// Show observed events locally without API calls.
+    Observe {
+        #[arg(long, default_value_t = 0)]
+        seconds: u64,
+    },
+    /// Record a new local JSONL session; no screenshots or API calls.
+    Record {
+        path: PathBuf,
+        #[arg(long, default_value_t = 0)]
+        seconds: u64,
+    },
+    /// Read a local session and summarize events; optional timed playback.
+    Replay {
+        path: PathBuf,
+        #[arg(long)]
+        timed: bool,
+        #[arg(long, default_value_t = 1.0)]
+        speed: f64,
     },
     /// Expose local read-only tools over stdio, no API key or LLM calls.
     Mcp {
@@ -202,6 +225,16 @@ async fn main() -> Result<()> {
             if let Some(p) = companion { p.close().await; }
             result?;
         }
+        Command::Devices => session::devices()?,
+        Command::Observe { seconds } => {
+            if !cfg!(windows) { bail!("Desktop monitoring is Windows-only"); }
+            session::observe(config::load(&root)?.app, None, seconds).await?;
+        }
+        Command::Record { path, seconds } => {
+            if !cfg!(windows) { bail!("Desktop monitoring is Windows-only"); }
+            session::observe(config::load(&root)?.app, Some(path), seconds).await?;
+        }
+        Command::Replay { path, timed, speed } => session::replay(&path,timed,speed).await?,
         Command::Mcp { vision } => {
             let cfg = config::load(&root)?;
             if !cfg!(windows) { bail!("Desktop monitoring is Windows-only"); }

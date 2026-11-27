@@ -15,13 +15,13 @@ impl Sensei{
     #[tool(description="Read target application, observer status and image permissions. No model request.")]
     async fn sensei_status(&self)->Result<CallToolResult,McpError>{
         let s=self.observer.snapshot();
-        Ok(CallToolResult::success(vec![Content::text(json!({"app":self.app,"active":s.active,"target_seen":s.target.is_some(),"vision":self.vision,"pressure":false}).to_string())]))
+        Ok(CallToolResult::success(vec![Content::text(json!({"app":self.app,"active":s.active,"target_seen":s.target.is_some(),"vision":self.vision,"native_pen_registered":s.native_registered,"native_reports":s.native_reports,"native_strokes":s.native_strokes}).to_string())]))
     }
-    #[tool(description="Read recent aggregated pointer and shortcut candidates in the target window; no keyboard text or screenshots.")]
+    #[tool(description="Read recent native pen stroke summaries, pointer and shortcut candidates in the target window; no keyboard text or screenshots.")]
     async fn desktop_recent_actions(&self)->Result<CallToolResult,McpError>{
         let s=self.observer.snapshot();
-        let a:Vec<_>=s.actions.iter().rev().take(40).collect();
-        Ok(CallToolResult::success(vec![Content::text(json!({"actions_newest_first":a,"coordinate_space":"window-relative pixels, not canvas","drawing":s.drawing}).to_string())]))
+        let a:Vec<_>=s.actions.iter().rev().take(40).map(crate::session::compact_action).collect();
+        Ok(CallToolResult::success(vec![Content::text(json!({"actions_newest_first":a,"coordinate_space":"window-relative pixels, not canvas","drawing":s.drawing,"summary":crate::session::summarize(s.actions.iter()),"pen_coordinate_space":"normalized tablet logical range, not canvas"}).to_string())]))
     }
     #[tool(description="Request a PNG of the previously observed target window. Only enabled with sensei mcp --vision. No whole-desktop capture.")]
     async fn paint_preview(&self)->Result<CallToolResult,McpError>{
