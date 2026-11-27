@@ -17,3 +17,14 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install -e ".[test]"
       - run: python -m pytest -q
+  csp-install-smoke:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Sensei and pinned CSP backend
+        run: python scripts/bootstrap.py --root "${{ runner.temp }}/sensei-smoke" install --paint csp
+      - name: Test cross-version MCP handshake without CSP or pairing
+        run: .\.venv\Scripts\sensei-setup.exe --root "${{ runner.temp }}/sensei-smoke" doctor
