@@ -110,6 +110,9 @@ enum Command {
         path: PathBuf,
         #[arg(long)]
         timed: bool,
+        /// Print the stored decimated pen trajectory, not only summaries.
+        #[arg(long)]
+        trace: bool,
         #[arg(long, default_value_t = 1.0)]
         speed: f64,
     },
@@ -234,7 +237,7 @@ async fn main() -> Result<()> {
             if !cfg!(windows) { bail!("Desktop monitoring is Windows-only"); }
             session::observe(config::load(&root)?.app, Some(path), seconds).await?;
         }
-        Command::Replay { path, timed, speed } => session::replay(&path,timed,speed).await?,
+        Command::Replay { path, timed, speed, trace } => session::replay(&path,timed,speed,trace).await?,
         Command::Mcp { vision } => {
             let cfg = config::load(&root)?;
             if !cfg!(windows) { bail!("Desktop monitoring is Windows-only"); }

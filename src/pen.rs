@@ -13,6 +13,7 @@ pub struct Sample {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Point {
     pub at_ms: u64,
+    #[serde(default)] pub sample_index: u32,
     pub xy: Option<[f64;2]>,
     pub pressure: Option<f64>,
     pub tilt_raw: [Option<i32>;2],
@@ -68,7 +69,7 @@ impl Accumulator {
                 self.out.tilt_raw_max[i]=Some(self.out.tilt_raw_max[i].map_or(v,|a|a.max(v)));
             }
         }
-        let point=Point{at_ms:ms.saturating_sub(self.start_ms),xy:s.xy,pressure:s.pressure,tilt_raw:s.tilt_raw};
+        let point=Point{at_ms:ms.saturating_sub(self.start_ms),sample_index:self.out.samples-1,xy:s.xy,pressure:s.pressure,tilt_raw:s.tilt_raw};
         if self.out.trace.len()>=128 {
             self.out.trace=self.out.trace.drain(..).step_by(2).collect();
             self.out.trace_stride=self.out.trace_stride.saturating_mul(2);
@@ -79,7 +80,7 @@ impl Accumulator {
     pub fn finish(mut self)->PenStroke{
         if self.out.pressure_samples>0{self.out.pressure_mean=Some(self.pressure_sum/self.out.pressure_samples as f64);}
         if let Some(last)=self.last_point{
-            if self.out.trace.last().map(|p|p.at_ms)!=Some(last.at_ms) {
+            if self.out.trace.last().map(|p|p.sample_index)!=Some(last.sample_index) {
                 if self.out.trace.len()>=128{self.out.trace.pop();}
                 self.out.trace.push(last);
             }
@@ -291,6 +292,12 @@ mod tests{
         a.sample(Sample{device:1,tip:true,xy:None,pressure:None,tilt_raw:[None,None]},120);
         let s=a.finish();assert_eq!(s.samples,3);assert_eq!(s.pressure_samples,2);assert_eq!(s.pressure_mean,Some(0.5));
         assert_eq!(s.tablet_bounds,Some([0.2,0.3,0.5,0.6]));assert_eq!(s.tilt_raw_min,[Some(-5),None]);assert_eq!(s.tilt_raw_max,[Some(7),None]);
+    }
+    #[test]fn keeps_last_sample_when_reports_share_a_timestamp(){
+        let mut a=Accumulator::new(1,0);
+        for i in 0..1000{a.sample(Sample{device:1,tip:true,xy:Some([i as f64/1000.0,0.0]),pressure:None,tilt_raw:[None;2]},10);}
+        let s=a.finish();assert_eq!(s.trace.last().unwrap().sample_index,999);
+        assert_eq!(s.trace.last().unwrap().xy,Some([0.999,0.0]));
     }
     #[test]fn trace_bounded_and_summary_preserved(){
         let mut a=Accumulator::new(1,0);

@@ -99,7 +99,7 @@ pub async fn observe(app:String,path:Option<PathBuf>,seconds:u64)->Result<()>{
     eprintln!("Observation stopped.");Ok(())
 }
 const MAX_LINE:usize=128*1024;
-pub async fn replay(path:&Path,timed:bool,speed:f64)->Result<()>{
+pub async fn replay(path:&Path,timed:bool,speed:f64,trace:bool)->Result<()>{
     if !speed.is_finite()||!(0.1..=100.0).contains(&speed){bail!("Replay speed must be 0.1–100");}
     let mut reader=BufReader::new(File::open(path)?);
     let mut line=Vec::new();let mut header=false;let mut ended=false;let mut last_seq=0u64;let mut last_time=None::<u64>;
@@ -132,7 +132,7 @@ pub async fn replay(path:&Path,timed:bool,speed:f64)->Result<()>{
                     pressure_samples=pressure_samples.saturating_add(u64::from(p.pressure_samples));
                     pressure_sum+=v*f64::from(p.pressure_samples);
                 }}
-                println!("{}",compact_action(&event));
+                if trace{println!("{}",serde_json::to_string(&event)?);}else{println!("{}",compact_action(&event));}
             }
             Row::Gap{missing:n} if header=>{missing=missing.saturating_add(n);eprintln!("Recording gap: {n}");}
             Row::End{events,missing:n} if header=>{if events!=count||n!=missing{bail!("Recording totals mismatch");}ended=true;}
@@ -154,11 +154,21 @@ mod tests{
         let mut w=Writer::new(&path,"krita.exe").unwrap();
         let a=Action{seq:1,at_ms:10,generation:1,kind:"click_candidate".into(),bounds:Some([0,0,1,1]),duration_ms:10,samples:1,distance_px:0,pen:None};
         w.event(&a).unwrap();w.gap(2).unwrap();w.finish().unwrap();drop(w);
-        assert!(Writer::new(&path,"x").is_err());replay(&path,false,1.0).await.unwrap();
+        assert!(Writer::new(&path,"x").is_err());replay(&path,false,1.0,false).await.unwrap();
         assert_eq!(summarize([&a])["counts"]["click_candidate"],1);
+    }
+    #[test]fn llm_and_mcp_context_omit_raw_trace(){
+        let mut a=crate::pen::Accumulator::new(1,0);
+        a.sample(crate::pen::Sample{device:1,tip:true,xy:Some([0.4,0.5]),pressure:Some(0.6),tilt_raw:[None;2]},1);
+        let p=a.finish();
+        let event=Action{seq:1,generation:1,at_ms:2,kind:"pen_stroke".into(),bounds:None,duration_ms:2,samples:p.samples,distance_px:0,pen:Some(p)};
+        let compact=compact_action(&event);
+        assert!(compact["pen"].get("trace").is_none());
+        assert_eq!(compact["pen"]["pressure_mean"],0.6);
+        assert_eq!(summarize([&event])["native_pen_strokes"],1);
     }
     #[tokio::test]async fn rejects_oversize(){
         let d=tempfile::tempdir().unwrap();let p=d.path().join("bad");std::fs::write(&p,vec![b'x';MAX_LINE+1]).unwrap();
-        assert!(replay(&p,false,1.0).await.is_err());
+        assert!(replay(&p,false,1.0,false).await.is_err());
     }
 }

@@ -111,7 +111,7 @@ APIキーやネット接続は不要です。未設定なら `setup --no-key --p
 .\sensei.exe observe --seconds 60
 # 自分の作業を明示的にローカルファイルへ記録（上書きしない）
 .\sensei.exe record session.jsonl --seconds 120
-# ローカル再生・統計。必要なら --timed --speed 2
+# ローカル再生・統計。必要なら --timed --speed 2、軌跡も表示するなら --trace
 .\sensei.exe replay session.jsonl
 ```
 
