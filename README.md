@@ -34,7 +34,7 @@ CSPまたはKritaを開き、描画・Undoなどを行って、Senseiが操作�
 .\sensei.exe doctor --api
 ```
 
-キー発行先: [OpenAI](https://platform.openai.com/api-keys) / [Google AI Studio](https://aistudio.google.com/apikey) / [Anthropic](https://console.anthropic.com/settings/keys) / [OpenRouter](https://openrouter.ai/keys)。設定画面にも発行先URLを表示します。APIキーはチャットやコマンド引数に貼らず非表示入力してください。環境変数は OPENAI_API_KEY / GEMINI_API_KEY / ANTHROPIC_API_KEY / OPENROUTER_API_KEY。旧 SENSEI_API_KEY はOpenAI公式接続先のみ有効です。カスタムAPIは保存済みキーを使用します。キーを削除する場合は対象プロバイダーを選び `forget-key`（環境変数は別途解除）。他社APIはモックテスト対象で、実キー・全モデルの実機検証は未実施です。
+キー発行先: [OpenAI](https://platform.openai.com/api-keys) / [Google AI Studio](https://aistudio.google.com/apikey) / [Anthropic](https://console.anthropic.com/settings/keys) / [OpenRouter](https://openrouter.ai/keys)。設定画面にも発行先URLを表示します。APIキーはチャットやコマンド引数に貼らず非表示入力してください。保存したキーを優先し、未登録の場合に環境変数を参照します。環境変数は OPENAI_API_KEY / GEMINI_API_KEY / ANTHROPIC_API_KEY / OPENROUTER_API_KEY。旧 SENSEI_API_KEY はOpenAI公式接続先のみの明示的な上書きとして有効です。カスタムAPIは保存済みキーを使用します。キーを削除する場合は対象プロバイダーを選び `forget-key`（環境変数は別途解除）。他社APIはモックテスト対象で、実キー・全モデルの実機検証は未実施です。
 
 ### Model selection
 

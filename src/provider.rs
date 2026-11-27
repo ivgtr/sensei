@@ -35,8 +35,8 @@ impl Provider {
         Self::Openrouter=>Some("https://openrouter.ai/keys"),Self::Custom=>None,
     }}
     pub fn presets(self)->&'static [&'static str]{match self{
-        Self::Openai=>&["gpt-4.1-mini","gpt-5-mini","gpt-4.1","gpt-5.2"],
-        Self::Gemini=>&["gemini-4-hydrogen","gemini-3.6-flash","gemini-2.5-flash"],
+        Self::Openai=>&["gpt-4.1-mini","gpt-5-mini","gpt-4.1","gpt-5.2","gpt-6.2-astra"],
+        Self::Gemini=>&["gemini-3.6-flash","gemini-4-hydrogen","gemini-2.5-flash"],
         Self::Anthropic=>&["claude-sonnet-4-6","claude-haiku-4-5","claude-opus-5"],
         Self::Openrouter=>&["openai/gpt-4.1-mini","google/gemini-3.6-flash","anthropic/claude-sonnet-4.6"],
         Self::Custom=>&[],

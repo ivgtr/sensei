@@ -27,7 +27,7 @@ fn python(root:&Path)->PathBuf {
 pub fn installed(root:&Path)->bool { python(root).is_file() && source(root).join("server.py").is_file() && root.join("companion-installed").is_file() }
 
 fn scrub(cmd:&mut Command) {
-    for key in ["SENSEI_API_KEY","OPENAI_API_KEY","ANTHROPIC_API_KEY","GEMINI_API_KEY","PYTHONPATH","PYTHONHOME"] {cmd.env_remove(key);}
+    for key in ["SENSEI_API_KEY","OPENAI_API_KEY","ANTHROPIC_API_KEY","GEMINI_API_KEY","OPENROUTER_API_KEY","PYTHONPATH","PYTHONHOME"] {cmd.env_remove(key);}
 }
 async fn execute(cmd:&mut Command)->Result<()> {
     scrub(cmd);

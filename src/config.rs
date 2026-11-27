@@ -95,15 +95,19 @@ pub fn prompt_key(root: &Path, cfg: &Config) -> Result<()> {
 }
 /// Provider-specific credentials only. Never reuse a different provider's key.
 pub fn read_provider_key(root: &Path, cfg: &Config) -> Result<String> {
+    #[cfg(windows)]
+    if let Ok(key) = entry(root, cfg)?.get_password() {
+        if !key.trim().is_empty() { return Ok(key.trim().to_owned()); }
+    }
     if let Some(name) = cfg.provider().env_key() {
         if let Ok(key) = std::env::var(name) {
             if !key.trim().is_empty() { return Ok(key.trim().to_owned()); }
         }
     }
     #[cfg(windows)]
-    { Ok(entry(root, cfg)?.get_password()?) }
+    { bail!("No API key registered for this endpoint; use sensei key") }
     #[cfg(not(windows))]
-    { let _ = (root, cfg); bail!("SENSEI_API_KEY is not set") }
+    { let _ = root; bail!("No provider-specific API key environment variable is set") }
 }
 pub fn read_key(root: &Path, cfg: &Config) -> Result<String> {
     // Backward-compatible generic override ONLY for the original OpenAI endpoint.

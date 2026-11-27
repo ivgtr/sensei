@@ -82,17 +82,20 @@ pub async fn choose(root: &Path, cfg: &Config) -> Result<String> {
         Err(e) => { eprintln!("モデル一覧を取得できません: {e}。直接入力も可能です。"); None }
     };
     let options = candidates(cfg, discovered.as_deref());
-    println!("現在のモデル: {}", cfg.model);
+    let default = if discovered.as_ref().is_some_and(|ids| !ids.contains(&cfg.model)) {
+        options.first().map(String::as_str).unwrap_or(&cfg.model)
+    } else { &cfg.model };
+    println!("現在のモデル: {} / Enterで選択: {}", cfg.model, default);
     println!("モデルを選択してください。候補の全機能への対応は未検証です。");
     for (i, id) in options.iter().enumerate() { println!("  {}) {}", i + 1, id); }
     if discovered.is_some() { println!("全モデルIDは sensei models で確認できます。"); }
     let mut stdin = io::stdin().lock();
     loop {
-        print!("番号 / モデルID直接入力 / Enterで現在値: ");
+        print!("番号 / モデルID直接入力 / Enterで表示された既定値: ");
         io::stdout().flush()?;
         let mut line = String::new();
-        if stdin.read_line(&mut line)? == 0 { return Ok(cfg.model.clone()); }
-        match resolve_choice(&line, &cfg.model, &options) {
+        if stdin.read_line(&mut line)? == 0 { return Ok(default.to_owned()); }
+        match resolve_choice(&line, default, &options) {
             Ok(id) => return Ok(id),
             Err(_) => eprintln!("有効な番号かモデルIDを入力してください。数字だけのIDは id:123 のように指定できます。"),
         }
