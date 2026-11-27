@@ -32,7 +32,7 @@ enum Command {
         /// Explicitly trusted OpenAI-compatible HTTPS API base.
         #[arg(long, default_value = "https://api.openai.com/v1")]
         api_base: String,
-        /// Install optional upstream Companion via uv and Git.
+        /// Install optional upstream Companion and managed uv/Python.
         #[arg(long)]
         companion: bool,
         /// Skip credential prompt (e.g. for a smoke test).

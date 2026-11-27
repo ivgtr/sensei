@@ -39,7 +39,7 @@ CSPまたはKritaを開き、描画・Undoなどを行って、Senseiが操作�
 
 通常のネイティブモードは外部MCPなしで動きます。CSPのブラシ状態とビュー操作が必要なら、Senseiが既存の [CSP Companion MCP](https://github.com/TMAK1710/csp-companion-mcp) を固定コミットで管理します。PythonソースをSensei本体に取り込まず、上流だけを隔離環境で実行します。
 
-オプション機能のみ、Gitと [uv](https://docs.astral.sh/uv/) をPATHに用意します（例えば winget install --id Git.Git -e / winget install --id astral-sh.uv -e、インストール後PowerShellを開き直す）。Python本体はuvが管理します。
+Senseiが [uv](https://docs.astral.sh/uv/) の固定バージョンのWindows x64 ZIPを取得してSHA-256を検証し、Companionの固定コミットの必要ファイルもGit blobハッシュで検証します。uvがPython 3.12と仮想環境・依存パッケージを管理します。Git/uv/Pythonの手動インストールは不要です（インターネット接続は必要）。
 
 ```powershell
 # 既にsetup済みの場合
@@ -50,7 +50,7 @@ CSPまたはKritaを開き、描画・Undoなどを行って、Senseiが操作�
 .\sensei.exe run --vision
 ```
 
-pairのみCSPの「スマートフォンと接続」QRのURLを手動で取得し、ローカル端末に入力します。絶対にチャットに貼らないでください。既存のペアリングデータは上書きしません。Companion起動・接続に失敗してもネイティブ観測で続行します。ブラシ状態は上流が提供する数値・真偽値フィールドだけを使います。
+pairのみCSPの「スマートフォンと接続」QRのURLを手動で取得し、ローカル端末に入力します。絶対にチャットに貼らないでください。既存のペアリングデータは上書きしません。Companion起動・接続に失敗してもネイティブ観測で続行します。依存の取得に失敗した場合は install-companion で再試行できます（未完成の companion-download が残っている場合は内容を確認してから取り除いてください）。ブラシ状態は上流が提供する数値・真偽値フィールドだけを使います。
 
 Companionは非公式プロトコルです。CSPのプレビュー・変更コマンドの実機互換は未確認。ビュー操作はユーザーの明示的なCLI入力またはAIの提案を :accept で承認した場合のみ。モデルからの自動実行は行いません。既存レイヤーの編集・保存・直接描画はMVP外です。Krita固有MCPのRust側統合は今後の拡張です（旧Python版には実装があります）。
 
